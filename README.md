@@ -28,6 +28,15 @@ PYTHONPATH=src python3 -m wtime
 PYTHONPATH=src python3 -m wtime Asia/Tokyo Europe/London
 ```
 
+さらに手軽に使いたい場合は、`portable/wtime.py` を直接実行する方法もある。`pip install` はもちろん `PYTHONPATH` の設定も不要で、`python3` さえあれば動く単一ファイル版（`--diff`・`--time`・`--set-local-tz`・都市名解決を含むフル機能）。
+
+```
+python3 portable/wtime.py
+python3 portable/wtime.py Asia/Tokyo Europe/London
+```
+
+このファイルをコピーするだけで他のマシンに持ち出せる。
+
 ## 使いかた
 
 ### 引数なし
@@ -149,6 +158,16 @@ python3 -m pytest
 
 `pytest` 自体も未インストールの場合は、`pip install -e ".[test]"` でインストールできる（`pip` が使える環境のみ）。
 
+### ポータブル版（`portable/wtime.py`）の再生成
+
+`portable/wtime.py` は `src/wtime/` の実装から自動生成した成果物であり、直接編集しない。`src/wtime/` に変更を加えたら、以下を実行して再生成し、生成結果もコミットする。
+
+```
+python3 scripts/build_portable.py
+```
+
+`tests/test_portable.py` に、再生成し忘れ（`src/wtime/` と `portable/wtime.py` の乖離）を検出するテストが含まれる。
+
 ### ディレクトリ構成
 
 ```
@@ -158,6 +177,10 @@ src/wtime/
 ├── cli.py         # 引数解析・全体制御
 ├── clock.py       # 時刻取得・タイムゾーン解決
 └── formatter.py   # 出力文字列の整形
+scripts/
+└── build_portable.py  # portable/wtime.py の生成スクリプト
+portable/
+└── wtime.py            # 生成された単一ファイル版（pip install不要）
 tests/             # pytest によるテスト
 ```
 

@@ -330,3 +330,56 @@ wtime --set-local-tz Foo/Bar   # エラーになること、終了コードを e
 - 既存の正常系・異常系（`--set-local-tz` なしの動作）に回帰がないことを確認する
 - `doc/requirement.md` の要求仕様（`--set-local-tz` 関連）との突き合わせ
 - `README.md` に `--set-local-tz` の使いかたが未記載であれば追記する
+
+---
+
+# 追加機能: ポータブル版（単一ファイル）
+
+ステップ1〜28はすでに実装済み。ここからは `doc/requirement.md`・`doc/spec.md` に追加した「`pip install` 不要の単一ファイル版」分の実装計画。既存の `src/`, `tests/` はロジックの変更を伴わない（生成元として参照するのみ）。
+
+# ステップ29: `scripts/build_portable.py` の実装
+
+- `src/wtime/clock.py` → `formatter.py` → `cli.py` の順にソースを読み込み、テキスト処理で1ファイルに結合する
+  - 各ファイルの `from wtime.xxx import ...` / `from wtime import __version__` 行を除去する
+  - 標準ライブラリの `import` 文を集約し、重複を除いて生成ファイル先頭に1回だけ記述する
+  - `src/wtime/__init__.py` から `__version__` の値を読み取り、生成ファイル先頭に `__version__ = "..."` として埋め込む
+  - 生成ファイル先頭に `# This file is auto-generated from src/wtime/ by scripts/build_portable.py. Do not edit directly.` を付与する
+  - 末尾に `if __name__ == "__main__": sys.exit(main())` を付与する
+  - 出力先は `portable/wtime.py`（`scripts/build_portable.py` を引数なしで実行すると上書き生成される）
+- **完了条件**: `python3 scripts/build_portable.py` を実行すると `portable/wtime.py` が生成され、`python3 portable/wtime.py --version` が `src/wtime/__init__.py` と同じバージョンを表示する
+
+# ステップ30: `portable/wtime.py` の生成・コミット
+
+- `python3 scripts/build_portable.py` を実行し、`portable/wtime.py` を生成する
+- 生成された `portable/wtime.py` を `python3 -c "import ast; ast.parse(open('portable/wtime.py').read())"` 等で構文チェックする
+- **完了条件**: `portable/wtime.py` が単独のPythonファイルとして構文エラーなく存在する
+
+# ステップ31: テスト実装（`tests/test_portable.py`）
+
+- `subprocess.run([sys.executable, "portable/wtime.py", ...])` でサブプロセス実行し、標準出力・標準エラー出力・終了コードを検証する
+- `doc/spec.md` の「5. テスト方針」に列挙したケース（引数なし、`--version` の一致、代表的なオプション組み合わせでの `src/wtime` 版との出力一致、生成し忘れ検出）を実装する
+  - 「生成し忘れ検出」は `scripts/build_portable.py` の生成関数を直接呼び出して得た文字列と、コミット済み `portable/wtime.py` の内容を比較する形で実装する
+- **完了条件**: `python -m pytest` が全件成功する
+
+# ステップ32: 手動動作確認
+
+`doc/requirement.md` の「ポータブル版（単一ファイル）」の使用例を実際に実行し、出力を目視確認する。
+
+```
+python3 portable/wtime.py
+python3 portable/wtime.py Europe/London Asia/Tokyo
+python3 portable/wtime.py --diff Europe/London
+python3 portable/wtime.py --time 2026-08-25T14:30:00 --set-local-tz Europe/London Asia/Tokyo
+python3 portable/wtime.py --version
+python3 portable/wtime.py --help
+python3 portable/wtime.py Foo/Bar   # エラーになること、終了コードを echo $? で確認
+```
+
+- **完了条件**: すべて `pip install` なしで実行でき、通常の `wtime` コマンドと同じ出力・終了コードになること
+
+# ステップ33: 最終確認
+
+- `python -m pytest` 全件成功
+- `python3 scripts/build_portable.py` を再実行しても `portable/wtime.py` に差分が出ない（生成の再現性）ことを確認する
+- `doc/requirement.md` の要求仕様（ポータブル版関連）との突き合わせ
+- `README.md` にポータブル版の説明（`portable/` の位置づけ、実行方法、再生成方法）を追記する

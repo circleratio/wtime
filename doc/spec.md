@@ -14,10 +14,15 @@ wtime/
 │       ├── cli.py           # 引数解析・全体制御（main関数）
 │       ├── clock.py         # 時刻取得・タイムゾーン解決
 │       └── formatter.py     # 出力文字列の整形
+├── scripts/
+│   └── build_portable.py   # src/wtime/ から portable/wtime.py を生成する
+├── portable/
+│   └── wtime.py             # 生成物。pip install 不要で動く単一ファイル版
 ├── tests/
 │   ├── test_cli.py
 │   ├── test_clock.py
-│   └── test_formatter.py
+│   ├── test_formatter.py
+│   └── test_portable.py
 └── doc/
     ├── requirement.md
     └── spec.md
@@ -288,6 +293,21 @@ wtime: error: invalid time: '2026-08-25'
 - `requires-python = ">=3.9"`（`zoneinfo` モジュールの下限）
 - バージョン番号は `wtime/__init__.py` の `__version__` を単一のソースとし、`pyproject.toml` 側は動的取得（`dynamic = ["version"]` + `[tool.setuptools.dynamic]`）とする
 
+# 4.1 ポータブル版（単一ファイル）のビルド
+
+`pip install` できない環境向けに、`src/wtime/` の実装から単一ファイル `portable/wtime.py` を自動生成する。
+
+- 生成スクリプト: `scripts/build_portable.py`（標準ライブラリのみで実装。import文の位置特定には `ast.parse` を使い、それ以外のコード本体の抽出・結合はソーステキストのスライスをそのまま連結するテキスト処理で行う）
+  - 結合順序: `clock.py` → `formatter.py` → `cli.py` → `__main__.py` 相当の起動処理
+  - 各モジュール内の `from wtime.xxx import ...` / `from wtime import __version__` という自モジュール間 import 文を除去する（結合後は同一ファイル内にすべてのシンボルが存在するため不要になる）
+  - 標準ライブラリの import文（`argparse`, `sys`, `os`, `time`, `dataclasses`, `datetime`, `functools`, `typing`, `zoneinfo` 等）は各モジュールから集約する。同一モジュールからの `from X import a, b` は名前をマージして1行にまとめ、生成ファイル先頭で重複なくソート済みで記述する
+  - `wtime/__init__.py` の `__version__ = "0.1.0"` をそのまま生成ファイル先頭のモジュール定数として埋め込む（バージョンのソースは変わらず `src/wtime/__init__.py` のまま。生成スクリプトがそこから読み取って埋め込む）
+  - ファイル末尾に `if __name__ == "__main__": sys.exit(main())` を付与する
+  - 生成ファイル先頭に `# This file is auto-generated from src/wtime/ by scripts/build_portable.py. Do not edit directly.` というコメント（英語、CLAUDE.mdの規約に従う）を付け、直接編集されることを防ぐ
+- 実行方法: `python3 scripts/build_portable.py`（引数なし、`portable/wtime.py` を上書き生成する）
+- `portable/wtime.py` はリポジトリにコミットする生成物とする（利用者が `git clone` 直後に `pip install` なしですぐ使えるようにするため）。`src/wtime/` を変更した場合は必ずビルドスクリプトを再実行し、生成物を最新化してからコミットする
+- ポータブル版は外部依存を追加しないため、生成後の単一ファイルも標準ライブラリのみで完結する
+
 # 5. テスト方針（pytest）
 
 - `test_clock.py`
@@ -331,3 +351,8 @@ wtime: error: invalid time: '2026-08-25'
   - `--set-local-tz` と `--time` を併用すると、`--time` の日時が `--set-local-tz` のタイムゾーンの壁時計時刻として解釈されること
   - `--set-local-tz` と `--diff` を併用すると、`--set-local-tz` のタイムゾーンを基準に時間差が計算されること
   - `--set-local-tz` に不正・曖昧な値を指定すると、標準出力が空であり、標準エラー出力にエラーメッセージが出力され、戻り値が `1` であること（他のタイムゾーン引数の検証よりも先に判定されること）
+- `test_portable.py`（`portable/wtime.py` を `subprocess` でサブプロセス実行して検証する。パッケージのimportではなくファイルパス実行によって「単一ファイルとして単独動作する」ことそのものを確認する）
+  - 引数なし実行でローカル時刻の1行が出力され、終了コードが `0` であること
+  - `--version` 実行時に `wtime <バージョン>` が出力され、`src/wtime/__init__.py` の `__version__` と一致すること
+  - タイムゾーン引数・`--diff`・`--time`・`--set-local-tz`・都市名解決・不正な引数（エラー終了）の代表的な組み合わせを1〜2ケースずつ実行し、`src/wtime` 版（`wtime.cli.main`）と出力が一致すること（フル機能を網羅的に再テストするのではなく、生成結果が壊れていないことのスモークテストと位置付ける）
+  - `portable/wtime.py` が生成スクリプト実行直後の内容と一致していること（`scripts/build_portable.py` の出力をコミット済みファイルと比較し、生成し忘れ・手動編集による乖離を検出する）
